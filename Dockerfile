@@ -4,20 +4,21 @@ FROM python:3.11-slim
 # Set the working directory
 WORKDIR /app
 
-# Install system dependencies for OpenGL and Mesa (Required for HighwayEnv/Gymnasium)
+# Install system dependencies
+# We replaced libgl1-mesa-glx with libgl1 and libglx-mesa0
 RUN apt-get update && apt-get install -y \
     freeglut3-dev \
     libgl1-mesa-dev \
     libglu1-mesa-dev \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy all files (including inference.py and highway_brain.pth) to the container
+# Copy all files
 COPY . .
 
-# Install Python libraries from requirements.txt
+# Install Python libraries
 RUN pip install --no-cache-dir -r requirements.txt
 
-# IMPORTANT: Meta OpenEnv expects the entry point to be the inference script.
-# We no longer run Streamlit as the main command.
+# Run the inference script
 CMD ["python", "inference.py"]
