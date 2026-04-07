@@ -4,6 +4,7 @@ import torch.nn as nn
 import gymnasium as gym
 import highway_env
 import numpy as np
+import time
 from openai import OpenAI
 
 # 1. Strict Env Var Handling
@@ -14,7 +15,7 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
-# 2. OpenAI Client (Required for compliance, even if model is local)
+# 2. OpenAI Client (Required for compliance)
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 # 3. Your AI Brain
@@ -46,16 +47,14 @@ def run_inference():
             model.load_state_dict(torch.load("highway_brain.pth", map_location='cpu'))
         model.eval()
 
-        # Initialize Environment inside try
-        env = gym.make('intersection-v0')
+        # Initialize Environment
+        env = gym.make('intersection-v1')
         obs, _ = env.reset()
 
-        # Evaluation Loop (Max 10 steps for validation)
         for i in range(10):
             steps += 1
             
             # AI Decision
-            # Safety: Ensure obs is flattened to exactly 105
             obs_flat = obs.flatten()
             if obs_flat.shape[0] > 105:
                 obs_flat = obs_flat[:105]
@@ -64,7 +63,6 @@ def run_inference():
             with torch.no_grad():
                 action_idx = torch.argmax(model(obs_t)).item()
             
-            # Map integer action to string for logs (as required)
             action_map = {0: "idle", 1: "accelerate", 2: "brake"}
             action_str = action_map.get(action_idx, "idle")
 
@@ -72,7 +70,7 @@ def run_inference():
             obs, reward, done, truncated, info = env.step(action_idx)
             is_done = done or truncated
 
-            # [STEP] - Immediate output, 2-decimal rewards, lowercase booleans
+            # [STEP] output
             print(
                 f"[STEP] step={steps} action={action_str} "
                 f"reward={reward:.2f} done={'true' if is_done else 'false'} "
@@ -82,8 +80,6 @@ def run_inference():
             rewards.append(f"{reward:.2f}")
 
             if is_done:
-                # Success is only true if the episode ended without a crash/timeout 
-                # (You can adjust this logic based on your 'info' dict)
                 success = True 
                 break
 
@@ -92,8 +88,13 @@ def run_inference():
     finally:
         if env:
             env.close()
-        # [END] - Final summary, strictly no extra fields
+        # [END] summary
         print(f"[END] success={'true' if success else 'false'} steps={steps} rewards={','.join(rewards)}")
 
+# --- COMBINED MAIN BLOCK ---
 if __name__ == "__main__":
     run_inference()
+    
+    # Keeps container alive so logs sync to Hugging Face
+    print("Inference complete. Closing in 30s...")
+    time.sleep(30)
