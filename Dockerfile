@@ -20,5 +20,6 @@ COPY . .
 # Install Python libraries
 RUN pip install --no-cache-dir -r requirements.txt
 
+EXPOSE 7860
 # Run the inference script
 CMD ["python", "inference.py"]
