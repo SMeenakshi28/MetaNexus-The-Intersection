@@ -58,7 +58,7 @@ def run_inference():
             model.load_state_dict(torch.load(model_path, map_location="cpu"))
         model.eval()
 
-        env = gym.make("intersection-v0")
+        env = gym.make("intersection-v1")
         obs, _ = env.reset()
 
         for _ in range(10):
@@ -73,6 +73,9 @@ def run_inference():
 
             obs, reward, done, truncated, info = env.step(action_idx)
             is_done = done or truncated
+            if is_done:
+                success = bool(info.get("is_success", False)) if isinstance(info, dict) else False
+                break
 
             print(
                 f"[STEP] step={steps} action={action_str} "
@@ -83,7 +86,7 @@ def run_inference():
             rewards.append(f"{reward:.2f}")
 
             if is_done:
-                success = True
+                success = reward > 0
                 break
 
     except Exception:
