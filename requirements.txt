@@ -1,0 +1,7 @@
+openai>=1.0.0
+python-dotenv
+numpy==1.26.4
+torch==2.2.1
+gymnasium==0.29.1
+highway-env==1.9.1
+pydantic>=2.0.0

@@ -1,0 +1,11 @@
+spec_version: "1"
+name: "smart-intersection-safety"
+version: "1.0.0"
+entry_point: "inference.py"
+sdk: "docker"
+framework: "PyTorch"
+task_ids: 
+  - "easy-flow"
+  - "medium-congestion"
+  - "hard-peak-hour"
+description: "A reinforcement learning environment for managing vehicle-to-vehicle interactions at busy intersections to optimize safety and traffic flow."
