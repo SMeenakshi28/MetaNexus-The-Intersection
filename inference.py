@@ -48,7 +48,7 @@ def run_inference():
         model.eval()
 
         # Initialize Environment
-        env = gym.make('intersection-v1')
+        env = gym.make('intersection-v0')
         obs, _ = env.reset()
 
         for i in range(10):
@@ -83,7 +83,8 @@ def run_inference():
                 success = True 
                 break
 
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG ERROR: {e}") # This will tell us EXACTLY what failed
         success = False
     finally:
         if env:
