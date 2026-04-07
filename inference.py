@@ -30,6 +30,17 @@ class HighwayBrain(nn.Module):
         return self.network(x)
 
 
+def pad_or_trim(obs, size=105):
+    obs_flat = obs.flatten()
+    obs_flat = torch.tensor(obs_flat, dtype=torch.float32)
+    if obs_flat.numel() < size:
+        pad = torch.zeros(size - obs_flat.numel(), dtype=torch.float32)
+        obs_flat = torch.cat([obs_flat, pad], dim=0)
+    elif obs_flat.numel() > size:
+        obs_flat = obs_flat[:size]
+    return obs_flat
+
+
 def run_inference():
     task_name = "medium-congestion"
     benchmark = "smart-intersection-safety"
@@ -42,26 +53,20 @@ def run_inference():
 
     try:
         model = HighwayBrain()
-        if os.path.exists("highway_brain.pth"):
-            model.load_state_dict(torch.load("highway_brain.pth", map_location="cpu"))
+        model_path = os.getenv("MODEL_PATH", "highway_brain.pth")
+        if os.path.exists(model_path):
+            model.load_state_dict(torch.load(model_path, map_location="cpu"))
         model.eval()
 
         env = gym.make("intersection-v0")
         obs, _ = env.reset()
 
-        for i in range(10):
+        for _ in range(10):
             steps += 1
 
-            obs_flat = obs.flatten()
-            if obs_flat.shape[0] < 105:
-                obs_flat = torch.tensor(obs_flat, dtype=torch.float32)
-                pad = torch.zeros(105 - obs_flat.shape[0], dtype=torch.float32)
-                obs_flat = torch.cat([obs_flat, pad], dim=0)
-            else:
-                obs_flat = torch.tensor(obs_flat[:105], dtype=torch.float32)
-
+            obs_t = pad_or_trim(obs, 105)
             with torch.no_grad():
-                action_idx = torch.argmax(model(obs_flat)).item()
+                action_idx = torch.argmax(model(obs_t)).item()
 
             action_map = {0: "idle", 1: "accelerate", 2: "brake"}
             action_str = action_map.get(action_idx, "idle")
