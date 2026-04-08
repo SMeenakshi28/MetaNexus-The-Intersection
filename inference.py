@@ -14,6 +14,31 @@ if HF_TOKEN is None:
 
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
+def parse_action(text):
+    try:
+        cleaned = text.strip().replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+        parts = [p.strip() for p in cleaned.split(",")]
+        if len(parts) >= 2:
+            a = float(parts[0])
+            b = float(parts[1])
+            return np.array([max(-1.0, min(1.0, a)), max(-1.0, min(1.0, b))], dtype=np.float32)
+    except Exception:
+        pass
+    return np.array([0.0, 0.0], dtype=np.float32)
+
+def get_llm_action():
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "user", "content": "Return exactly two comma-separated numbers in [-1, 1]."}
+            ],
+        )
+        return parse_action(response.choices[0].message.content or "")
+    except Exception as e:
+        print(f"LLM error: {e}", file=sys.stderr)
+        return np.array([0.0, 0.0], dtype=np.float32)
+
 def run_inference():
     task_name = "medium-congestion"
     benchmark = "smart-intersection-safety"
@@ -26,31 +51,35 @@ def run_inference():
 
     try:
         env = gym.make("intersection-v1")
-
-        # Debug info to stderr only
-        print(f"action_space={env.action_space}", file=sys.stderr)
-        print(f"observation_space={env.observation_space}", file=sys.stderr)
-
         obs, _ = env.reset(seed=42)
-        print(f"obs_type={type(obs)}", file=sys.stderr)
-        print(f"obs_shape={getattr(obs, 'shape', None)}", file=sys.stderr)
 
-        # Correct action for Box(-1.0, 1.0, (2,), float32)
-        action = np.array([0.0, 0.0], dtype=np.float32)
-        print(f"trying action={action.tolist()}", file=sys.stderr)
+        # Try LLM once, then reuse or fallback
+        action = get_llm_action()
 
-        obs, reward, done, truncated, info = env.step(action)
-        steps += 1
-        is_done = done or truncated
+        for _ in range(20):
+            try:
+                obs, reward, done, truncated, info = env.step(action)
+            except Exception as e:
+                print(f"STEP error: {e}", file=sys.stderr)
+                break
 
-        print(
-            f"[STEP] step={steps} action={action.tolist()} reward={reward:.2f} "
-            f"done={'true' if is_done else 'false'} error=null"
-        )
-        rewards.append(f"{reward:.2f}")
+            steps += 1
+            rewards.append(f"{reward:.2f}")
+            is_done = done or truncated
 
-        if isinstance(info, dict):
-            success = bool(info.get("is_success", False) or info.get("goal_reached", False))
+            print(
+                f"[STEP] step={steps} action={action.tolist()} reward={reward:.2f} "
+                f"done={'true' if is_done else 'false'} error=null"
+            )
+
+            if isinstance(info, dict):
+                success = bool(info.get("is_success", False) or info.get("goal_reached", False))
+
+            if is_done:
+                break
+
+            # keep using same action or fallback
+            action = action if action is not None else np.array([0.0, 0.0], dtype=np.float32)
 
     except Exception as e:
         print(f"Runtime Error: {e}", file=sys.stderr)
