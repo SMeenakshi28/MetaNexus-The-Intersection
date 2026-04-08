@@ -4,7 +4,7 @@ import torch.nn as nn
 import gymnasium as gym
 import highway_env
 import numpy as np
-from openai import OpenAI
+import random
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
@@ -12,8 +12,6 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
-
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 
 class HighwayBrain(nn.Module):
@@ -47,6 +45,8 @@ def run_inference():
     steps = 0
     success = False
     env = None
+    prev_action = None
+    repeat_count = 0
 
     print(f"[START] task={task_name} env={benchmark} model={MODEL_NAME}")
 
@@ -70,15 +70,23 @@ def run_inference():
 
         for _ in range(15):
             steps += 1
-
             obs_t = pad_or_trim(obs, 105)
 
             with torch.no_grad():
                 logits = model(obs_t)
 
             action_idx = int(torch.argmax(logits).item())
-            if hasattr(env.action_space, "n"):
-                action_idx = max(0, min(action_idx, env.action_space.n - 1))
+
+            if action_idx == prev_action:
+                repeat_count += 1
+            else:
+                repeat_count = 0
+
+            if repeat_count >= 2:
+                action_idx = (action_idx + 1) % env.action_space.n
+                repeat_count = 0
+
+            prev_action = action_idx
 
             action_map = {0: "idle", 1: "accelerate", 2: "brake"}
             action_str = action_map.get(action_idx, "idle")
@@ -91,6 +99,7 @@ def run_inference():
                 f"reward={reward:.2f} done={'true' if is_done else 'false'} "
                 f"error=null"
             )
+
             rewards.append(f"{reward:.2f}")
 
             if is_done:
