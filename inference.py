@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import gymnasium as gym
 import highway_env
+import numpy as np
 from openai import OpenAI
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
@@ -31,14 +32,12 @@ class HighwayBrain(nn.Module):
 
 
 def pad_or_trim(obs, size=105):
-    obs_flat = obs.flatten()
-    obs_flat = torch.tensor(obs_flat, dtype=torch.float32)
-    if obs_flat.numel() < size:
-        pad = torch.zeros(size - obs_flat.numel(), dtype=torch.float32)
-        obs_flat = torch.cat([obs_flat, pad], dim=0)
-    elif obs_flat.numel() > size:
+    obs_flat = np.array(obs).flatten()
+    if obs_flat.size < size:
+        obs_flat = np.pad(obs_flat, (0, size - obs_flat.size))
+    else:
         obs_flat = obs_flat[:size]
-    return obs_flat
+    return torch.tensor(obs_flat, dtype=torch.float32)
 
 
 def run_inference():
@@ -59,34 +58,50 @@ def run_inference():
         model.eval()
 
         env = gym.make("intersection-v1")
+        env.unwrapped.configure(
+            {
+                "action": {
+                    "type": "DiscreteMetaAction",
+                }
+            }
+        )
+
         obs, _ = env.reset()
 
-        for _ in range(10):
+        for _ in range(15):
             steps += 1
 
             obs_t = pad_or_trim(obs, 105)
+
             with torch.no_grad():
-                action_idx = torch.argmax(model(obs_t)).item()
+                logits = model(obs_t)
+
+            action_idx = int(torch.argmax(logits).item())
+            if hasattr(env.action_space, "n"):
+                action_idx = max(0, min(action_idx, env.action_space.n - 1))
 
             action_map = {0: "idle", 1: "accelerate", 2: "brake"}
             action_str = action_map.get(action_idx, "idle")
 
             obs, reward, done, truncated, info = env.step(action_idx)
             is_done = done or truncated
-            if is_done:
-                success = bool(info.get("is_success", False)) if isinstance(info, dict) else False
-                break
 
             print(
                 f"[STEP] step={steps} action={action_str} "
                 f"reward={reward:.2f} done={'true' if is_done else 'false'} "
                 f"error=null"
             )
-
             rewards.append(f"{reward:.2f}")
 
             if is_done:
-                success = reward > 0
+                if isinstance(info, dict):
+                    success = bool(
+                        info.get("is_success", False)
+                        or info.get("success", False)
+                        or info.get("goal_reached", False)
+                    )
+                if not success and reward > 0:
+                    success = True
                 break
 
     except Exception:
