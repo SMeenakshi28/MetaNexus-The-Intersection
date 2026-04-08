@@ -26,23 +26,25 @@ def run_inference():
 
     try:
         env = gym.make("intersection-v1")
+
+        # Debug info to stderr only
         print(f"action_space={env.action_space}", file=sys.stderr)
         print(f"observation_space={env.observation_space}", file=sys.stderr)
 
         obs, _ = env.reset(seed=42)
         print(f"obs_type={type(obs)}", file=sys.stderr)
         print(f"obs_shape={getattr(obs, 'shape', None)}", file=sys.stderr)
-        print(f"obs={obs}", file=sys.stderr)
 
-        # Try a single no-op or zero action
-        action = 0
-        print(f"trying action={action}", file=sys.stderr)
+        # Correct action for Box(-1.0, 1.0, (2,), float32)
+        action = np.array([0.0, 0.0], dtype=np.float32)
+        print(f"trying action={action.tolist()}", file=sys.stderr)
 
         obs, reward, done, truncated, info = env.step(action)
+        steps += 1
         is_done = done or truncated
 
         print(
-            f"[STEP] step=1 action=idle reward={reward:.2f} "
+            f"[STEP] step={steps} action={action.tolist()} reward={reward:.2f} "
             f"done={'true' if is_done else 'false'} error=null"
         )
         rewards.append(f"{reward:.2f}")
@@ -55,7 +57,7 @@ def run_inference():
     finally:
         if env is not None:
             env.close()
-        print(f"[END] success={'true' if success else 'false'} steps={steps + len(rewards)} rewards={','.join(rewards)}")
+        print(f"[END] success={'true' if success else 'false'} steps={steps} rewards={','.join(rewards)}")
 
 if __name__ == "__main__":
     run_inference()
