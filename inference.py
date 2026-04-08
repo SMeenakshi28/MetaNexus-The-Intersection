@@ -14,25 +14,6 @@ if HF_TOKEN is None:
 
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
-def get_action(obs):
-    try:
-        obs_summary = np.array(obs).flatten()[:5].tolist()
-        obs_str = ",".join([f"{x:.2f}" for x in obs_summary])
-        prompt = f"Obs:{obs_str}. Action (0:IDLE, 1:ACCEL, 2:BRAKE)? Digit only."
-
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        res = response.choices[0].message.content.strip()
-        if res in ["0", "1", "2"]:
-            return int(res)
-    except Exception as e:
-        print(f"API/Auth Error: {e}", file=sys.stderr)
-
-    return 0
-
 def run_inference():
     task_name = "medium-congestion"
     benchmark = "smart-intersection-safety"
@@ -45,37 +26,36 @@ def run_inference():
 
     try:
         env = gym.make("intersection-v1")
+        print(f"action_space={env.action_space}", file=sys.stderr)
+        print(f"observation_space={env.observation_space}", file=sys.stderr)
+
         obs, _ = env.reset(seed=42)
+        print(f"obs_type={type(obs)}", file=sys.stderr)
+        print(f"obs_shape={getattr(obs, 'shape', None)}", file=sys.stderr)
+        print(f"obs={obs}", file=sys.stderr)
 
-        for _ in range(10):
-            steps += 1
-            action_idx = get_action(obs)
+        # Try a single no-op or zero action
+        action = 0
+        print(f"trying action={action}", file=sys.stderr)
 
-            obs, reward, done, truncated, info = env.step(int(action_idx))
-            is_done = done or truncated
+        obs, reward, done, truncated, info = env.step(action)
+        is_done = done or truncated
 
-            action_map = {0: "idle", 1: "accelerate", 2: "brake"}
-            action_str = action_map.get(action_idx, "idle")
+        print(
+            f"[STEP] step=1 action=idle reward={reward:.2f} "
+            f"done={'true' if is_done else 'false'} error=null"
+        )
+        rewards.append(f"{reward:.2f}")
 
-            print(
-                f"[STEP] step={steps} action={action_str} reward={reward:.2f} "
-                f"done={'true' if is_done else 'false'} error=null"
-            )
-            rewards.append(f"{reward:.2f}")
-
-            if is_done:
-                if isinstance(info, dict):
-                    success = bool(info.get("is_success", False) or info.get("goal_reached", False))
-                    if not success and reward >= 0 and not info.get("crashed", False):
-                        success = True
-                break
+        if isinstance(info, dict):
+            success = bool(info.get("is_success", False) or info.get("goal_reached", False))
 
     except Exception as e:
         print(f"Runtime Error: {e}", file=sys.stderr)
     finally:
         if env is not None:
             env.close()
-        print(f"[END] success={'true' if success else 'false'} steps={steps} rewards={','.join(rewards)}")
+        print(f"[END] success={'true' if success else 'false'} steps={steps + len(rewards)} rewards={','.join(rewards)}")
 
 if __name__ == "__main__":
     run_inference()
