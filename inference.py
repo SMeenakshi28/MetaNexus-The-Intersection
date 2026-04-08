@@ -105,3 +105,6 @@ def run_inference():
 
 if __name__ == "__main__":
     run_inference()
+    print("--- Execution Finished. Staying alive for Meta Validator ---")
+    import time
+    time.sleep(3600)
