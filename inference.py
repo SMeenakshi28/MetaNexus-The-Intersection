@@ -1,10 +1,9 @@
+import sys
 import os
-import torch
-import torch.nn as nn
 import gymnasium as gym
 import highway_env
 import numpy as np
-import random
+from openai import OpenAI
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
@@ -13,30 +12,28 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
-class HighwayBrain(nn.Module):
-    def __init__(self, state_size=105, action_size=3):
-        super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(state_size, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, action_size),
+def get_llm_action(obs):
+    obs_summary = np.array(obs).flatten()[:10].tolist()
+    obs_str = ", ".join([f"{x:.2f}" for x in obs_summary])
+
+    prompt = (
+        f"Intersection state: [{obs_str}]. "
+        f"Move: 0=IDLE, 1=ACCEL, 2=BRAKE. Reply only with the digit."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1,
+            temperature=0,
         )
-
-    def forward(self, x):
-        return self.network(x)
-
-
-def pad_or_trim(obs, size=105):
-    obs_flat = np.array(obs).flatten()
-    if obs_flat.size < size:
-        obs_flat = np.pad(obs_flat, (0, size - obs_flat.size))
-    else:
-        obs_flat = obs_flat[:size]
-    return torch.tensor(obs_flat, dtype=torch.float32)
-
+        res_text = response.choices[0].message.content.strip()
+        return int(res_text) if res_text in ["0", "1", "2"] else 0
+    except Exception:
+        return 0
 
 def run_inference():
     task_name = "medium-congestion"
@@ -45,49 +42,17 @@ def run_inference():
     steps = 0
     success = False
     env = None
-    prev_action = None
-    repeat_count = 0
 
     print(f"[START] task={task_name} env={benchmark} model={MODEL_NAME}")
 
     try:
-        model = HighwayBrain()
-        model_path = os.getenv("MODEL_PATH", "highway_brain.pth")
-        if os.path.exists(model_path):
-            model.load_state_dict(torch.load(model_path, map_location="cpu"))
-        model.eval()
+        env = gym.make("intersection-v0")
+        obs, _ = env.reset(seed=42)
 
-        env = gym.make("intersection-v1")
-        env.unwrapped.configure(
-            {
-                "action": {
-                    "type": "DiscreteMetaAction",
-                }
-            }
-        )
-
-        obs, _ = env.reset()
-
-        for _ in range(15):
+        for _ in range(10):
             steps += 1
-            obs_t = pad_or_trim(obs, 105)
 
-            with torch.no_grad():
-                logits = model(obs_t)
-
-            action_idx = int(torch.argmax(logits).item())
-
-            if action_idx == prev_action:
-                repeat_count += 1
-            else:
-                repeat_count = 0
-
-            if repeat_count >= 2:
-                action_idx = (action_idx + 1) % env.action_space.n
-                repeat_count = 0
-
-            prev_action = action_idx
-
+            action_idx = get_llm_action(obs)
             action_map = {0: "idle", 1: "accelerate", 2: "brake"}
             action_str = action_map.get(action_idx, "idle")
 
@@ -99,27 +64,22 @@ def run_inference():
                 f"reward={reward:.2f} done={'true' if is_done else 'false'} "
                 f"error=null"
             )
-
             rewards.append(f"{reward:.2f}")
 
             if is_done:
                 if isinstance(info, dict):
-                    success = bool(
-                        info.get("is_success", False)
-                        or info.get("success", False)
-                        or info.get("goal_reached", False)
-                    )
-                if not success and reward > 0:
-                    success = True
+                    success = bool(info.get("is_success", False) or info.get("goal_reached", False))
+                    if not success and reward > 0 and not info.get("crashed", False):
+                        success = True
                 break
 
-    except Exception:
+    except Exception as e:
+        print(f"debug error: {e}", file=sys.stderr)
         success = False
     finally:
         if env is not None:
             env.close()
         print(f"[END] success={'true' if success else 'false'} steps={steps} rewards={','.join(rewards)}")
-
 
 if __name__ == "__main__":
     run_inference()
