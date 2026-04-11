@@ -100,11 +100,9 @@ def run_inference():
             env.close()
         
         # [END] footer
-        print(f"[END] success={'true' if success else 'false'} steps={steps} rewards={','.join(rewards)}")
-        sys.stdout.flush()
+        score = 1.0 if success else 0.0
+print(f"[END] success={'true' if success else 'false'} steps={steps} score={score:.2f} rewards={','.join(rewards)}")
 
 if __name__ == "__main__":
     run_inference()
     print("--- Execution Finished. Staying alive for Meta Validator ---")
-    import time
-    time.sleep(3600)
