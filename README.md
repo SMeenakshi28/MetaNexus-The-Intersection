@@ -6,8 +6,16 @@ An Autonomous Traffic Management environment designed to minimize wait times and
 This environment simulates real-world vehicle-to-vehicle (V2V) interactions. The agent must control the ego-vehicle to navigate through cross-traffic safely and efficiently.
 
 ## 📊 Specification
-- **Observation Space**: Box(105,) - Relative positions and velocities of the 7 closest vehicles.
-- **Action Space**: Discrete(3) - [0: SLOWER, 1: IDLE, 2: FASTER]
+- **Observation Space**: The environment returns a JSON-based state:
+json
+
+{
+  "cars": int,
+  "waiting_time": int,
+  "step": int
+}
+- **Action Space**: Continuous (list of 2 floats)  
+  Example: [0.5, 0.0]
 - **Tasks**: 
   - `easy-flow`: Single vehicle interaction.
   - `medium-congestion`: Moderate urban traffic (5 vehicles).
