@@ -19,6 +19,7 @@ def root():
     return {"status": "ok"}
 
 @app.get("/reset")
+@app.post("/reset")
 def reset():
     global state_data
     state_data = {
