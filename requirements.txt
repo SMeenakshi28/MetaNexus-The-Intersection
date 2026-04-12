@@ -2,3 +2,4 @@ openai>=1.0.0
 numpy==1.26.4
 fastapi
 uvicorn
+openenv>=0.2.0
