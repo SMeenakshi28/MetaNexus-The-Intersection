@@ -10,7 +10,7 @@ dependencies = [
   "uvicorn",
   "pydantic",
   "numpy",
-  "openai"
+  "openai",
   "openenv>=0.1.13"
 ]
 
