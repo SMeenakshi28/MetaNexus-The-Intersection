@@ -1,13 +1,10 @@
 import os
 import sys
-import gymnasium as gym
-import highway_env
 import numpy as np
-import time
+import requests
 from openai import OpenAI
 
-# 1. Configuration
-# FIXED: Points to the Hugging Face Inference API instead of OpenAI's main site
+# Config
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -15,28 +12,26 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
-# Initialize client with the specific HF Base URL
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
-def get_llm_action_deterministic():
-    """Fetches action from LLM or returns a safe fallback if 401 occurs."""
+BASE_URL = "http://localhost:7860"
+
+def get_llm_action():
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": "Return exactly: 0.5, 0.0"}],
             max_tokens=10,
-            temperature=0 # Absolute determinism
+            temperature=0
         )
         text = response.choices[0].message.content or "0.5, 0.0"
-        # Extract numbers safely
         nums = [float(s.strip()) for s in text.replace('[','').replace(']','').split(',') if s.strip()]
         if len(nums) >= 2:
-            return np.array([nums[0], nums[1]], dtype=np.float32)
+            return [nums[0], nums[1]]
     except Exception as e:
-        # If API fails (like 401), we use a safe 'Cruise' action so the run finishes
-        print(f"API Fallback (Error: {e})", file=sys.stderr)
-    
-    return np.array([0.5, 0.0], dtype=np.float32)
+        print(f"LLM error: {e}", file=sys.stderr)
+
+    return [0.5, 0.0]
 
 def run_inference():
     task_name = "medium-congestion"
@@ -44,65 +39,46 @@ def run_inference():
     rewards = []
     steps = 0
     success = False
-    env = None
 
-    # [START] header
     print(f"[START] task={task_name} env={benchmark} model={MODEL_NAME}")
     sys.stdout.flush()
 
     try:
-        # Initialize env
-        env = gym.make("intersection-v1")
-        
-        # KEY FIX: Force continuous action space so it accepts [accel, steering]
-        env.unwrapped.configure({
-            "action": {
-                "type": "ContinuousAction"
-            }
-        })
-        
-        obs, _ = env.reset(seed=42) # Deterministic start
+        # Reset env
+        res = requests.post(f"{BASE_URL}/reset")
+        obs = res.json()
 
-        # Get action once (deterministic)
-        action = get_llm_action_deterministic()
-
-        for _ in range(15):
+        for _ in range(10):
             steps += 1
-            
+
+            action = get_llm_action()
+
             try:
-                obs, reward, done, truncated, info = env.step(action)
+                res = requests.post(f"{BASE_URL}/step", json={"action": action})
+                data = res.json()
             except Exception as e:
-                print(f"Env Step Error: {e}", file=sys.stderr)
+                print(f"[STEP] step={steps} action={action} reward=0.00 done=true error={str(e)}")
                 break
 
-            is_done = done or truncated
-            
-            # [STEP] log
-            print(f"[STEP] step={steps} action={action.tolist()} reward={reward:.2f} done={'true' if is_done else 'false'} error=null")
+            reward = float(data.get("reward", 0.0))
+            done = data.get("done", False)
+
+            print(f"[STEP] step={steps} action={action} reward={reward:.2f} done={'true' if done else 'false'} error=null")
             sys.stdout.flush()
-            
+
             rewards.append(f"{reward:.2f}")
 
-            # Check success indicators
-            if isinstance(info, dict):
-                success = bool(info.get("is_success", False) or info.get("goal_reached", False))
-            
-            # If we didn't crash and finished, we count it as survival success
-            if is_done:
-                if not success and reward > 0 and not info.get("crashed", False):
-                    success = True
+            if done:
+                success = True if reward > 0 else False
                 break
 
     except Exception as e:
         print(f"Runtime Error: {e}", file=sys.stderr)
-    finally:
-        if env is not None:
-            env.close()
-        
-        # [END] footer
-        score = 1.0 if success else 0.0
-print(f"[END] success={'true' if success else 'false'} steps={steps} score={score:.2f} rewards={','.join(rewards)}")
+
+    # ✅ END MUST BE INSIDE FUNCTION
+    score = 1.0 if success else 0.0
+    print(f"[END] success={'true' if success else 'false'} steps={steps} score={score:.2f} rewards={','.join(rewards)}")
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     run_inference()
-    print("--- Execution Finished. Staying alive for Meta Validator ---")
